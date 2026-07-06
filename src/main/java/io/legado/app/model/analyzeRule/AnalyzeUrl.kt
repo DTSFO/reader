@@ -18,6 +18,7 @@ import kotlinx.coroutines.runBlocking
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
+import org.mozilla.javascript.Undefined
 import java.net.URLEncoder
 import java.util.regex.Pattern
 import io.legado.app.model.DebugLog
@@ -95,26 +96,53 @@ class AnalyzeUrl(
      * 执行@js,<js></js>
      */
     private fun analyzeJs() {
+        val sourceRuleUrl = ruleUrl
         var start = 0
-        var tmp: String
-        val jsMatcher = JS_PATTERN.matcher(ruleUrl)
+        var jsResult = ruleUrl
+        val builder = StringBuilder()
+        val jsMatcher = JS_PATTERN.matcher(sourceRuleUrl)
         while (jsMatcher.find()) {
             if (jsMatcher.start() > start) {
-                tmp =
-                    ruleUrl.substring(start, jsMatcher.start()).trim { it <= ' ' }
-                if (tmp.isNotEmpty()) {
-                    ruleUrl = tmp.replace("@result", ruleUrl)
-                }
+                builder.append(sourceRuleUrl.substring(start, jsMatcher.start()))
             }
-            ruleUrl = evalJS(jsMatcher.group(2) ?: jsMatcher.group(1), ruleUrl)?.toString() ?: ""
+            val embedded = jsMatcher.start() > 0 || jsMatcher.end() < sourceRuleUrl.length
+            jsResult = evalUrlJs(jsMatcher.group(2) ?: jsMatcher.group(1), jsResult, embedded)
+            builder.append(jsResult)
             start = jsMatcher.end()
         }
-        if (ruleUrl.length > start) {
-            tmp = ruleUrl.substring(start).trim { it <= ' ' }
-            if (tmp.isNotEmpty()) {
-                ruleUrl = tmp.replace("@result", ruleUrl)
-            }
+        if (sourceRuleUrl.length > start) {
+            builder.append(sourceRuleUrl.substring(start))
         }
+        if (builder.isNotEmpty()) {
+            ruleUrl = builder.toString().trim { it <= ' ' }.replace("@result", jsResult)
+        }
+    }
+
+    private fun evalUrlJs(jsStr: String, result: Any?, embedded: Boolean): String {
+        legacyUrlRule(jsStr)?.let {
+            return it
+        }
+        return evalJS(jsStr, result).toUrlJsString(embedded)
+    }
+
+    private fun legacyUrlRule(jsStr: String): String? {
+        val trimmed = jsStr.trim { it <= ' ' }
+        if (!trimmed.startsWith("/") && !trimmed.startsWith("http", true)) {
+            return null
+        }
+        val end = trimmed.indexOf(';').takeIf { it > 0 } ?: trimmed.length
+        val candidate = trimmed.substring(0, end).trim { it <= ' ' }
+        return if (candidate.contains(",{")) candidate else null
+    }
+
+    private fun Any?.toUrlJsString(embedded: Boolean): String {
+        if (this == null || Undefined.isUndefined(this)) {
+            return ""
+        }
+        if (embedded && this !is CharSequence && this !is Number && this !is Boolean) {
+            return ""
+        }
+        return toString()
     }
 
     /**
