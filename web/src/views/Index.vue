@@ -1834,11 +1834,11 @@ export default {
               const source = JSON.stringify(v);
               if (source.indexOf("webView:") !== -1) {
                 hasFilterd = true;
-                return false;
+                return null;
               }
               return i;
             })
-            .filter(v => v)
+            .filter(v => v !== null)
         : [];
       if (val && hasFilterd) {
         this.$message.info("部分使用了WebView的书源未勾选");
