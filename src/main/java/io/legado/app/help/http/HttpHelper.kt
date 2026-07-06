@@ -13,9 +13,13 @@ import okhttp3.Response
 import okhttp3.Request
 import okhttp3.logging.HttpLoggingInterceptor
 import java.net.Inet4Address
+import java.net.Inet6Address
 import java.net.InetAddress
 import java.net.InetSocketAddress
+import java.net.NetworkInterface
 import java.net.Proxy
+import java.net.UnknownHostException
+import java.util.Collections
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlin.coroutines.resume
@@ -26,12 +30,40 @@ private val proxyClientCache: ConcurrentHashMap<String, OkHttpClient> by lazy {
     ConcurrentHashMap()
 }
 
+private val ipv6Available: Boolean by lazy {
+    runCatching {
+        val networkInterfaces = Collections.list(NetworkInterface.getNetworkInterfaces())
+        networkInterfaces.any { networkInterface ->
+            runCatching {
+                networkInterface.isUp &&
+                    !networkInterface.isLoopback &&
+                    Collections.list(networkInterface.inetAddresses).any {
+                        it is Inet6Address &&
+                            !it.isAnyLocalAddress &&
+                            !it.isLoopbackAddress &&
+                            !it.isLinkLocalAddress
+                    }
+            }.getOrDefault(false)
+        }
+    }.getOrDefault(false)
+}
+
 private val ipv4FirstDns = object : Dns {
     override fun lookup(hostname: String): List<InetAddress> {
-        return Dns.SYSTEM.lookup(hostname).sortedWith(
+        val addresses = Dns.SYSTEM.lookup(hostname)
+        val sortedAddresses = addresses.sortedWith(
             compareBy<InetAddress> { if (it is Inet4Address) 0 else 1 }
                 .thenBy { it.hostAddress ?: "" }
         )
+        if (ipv6Available) {
+            return sortedAddresses
+        }
+
+        val ipv4Addresses = sortedAddresses.filterIsInstance<Inet4Address>()
+        if (ipv4Addresses.isNotEmpty()) {
+            return ipv4Addresses
+        }
+        throw UnknownHostException("$hostname has no IPv4 addresses and IPv6 is unavailable")
     }
 }
 
