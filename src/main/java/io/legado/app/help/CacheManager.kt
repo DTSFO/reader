@@ -1,14 +1,14 @@
 package io.legado.app.help
 
-import io.legado.app.data.entities.Cache
 import io.legado.app.model.analyzeRule.QueryTTF
 import io.legado.app.utils.ACache
+import java.util.concurrent.ConcurrentHashMap
 
-// TODO 处理缓存
 @Suppress("unused")
 object CacheManager {
 
     private val queryTTFMap = hashMapOf<String, Pair<Long, QueryTTF>>()
+    private val stringCacheMap = ConcurrentHashMap<String, Pair<Long, String>>()
 
     /**
      * saveTime 单位为秒
@@ -21,15 +21,23 @@ object CacheManager {
             is QueryTTF -> queryTTFMap[key] = Pair(deadline, value)
             is ByteArray -> ACache.get().put(key, value, saveTime)
             else -> {
-                val cache = Cache(key, value.toString(), deadline)
-                // appDb.cacheDao.insert(cache)
+                val cacheValue = value.toString()
+                stringCacheMap[key] = Pair(deadline, cacheValue)
+                ACache.get().put(key, cacheValue, saveTime)
             }
         }
     }
 
     fun get(key: String): String? {
-        // return appDb.cacheDao.get(key, System.currentTimeMillis())
-        return null
+        stringCacheMap[key]?.let { cache ->
+            if (cache.first == 0L || cache.first > System.currentTimeMillis()) {
+                return cache.second
+            }
+            stringCacheMap.remove(key)
+        }
+        return ACache.get().getAsString(key)?.also {
+            stringCacheMap[key] = Pair(0L, it)
+        }
     }
 
     fun getInt(key: String): Int? {
@@ -69,6 +77,7 @@ object CacheManager {
     }
 
     fun delete(key: String) {
+        stringCacheMap.remove(key)
         ACache.get().remove(key)
     }
 }

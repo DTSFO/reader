@@ -17,6 +17,8 @@ import kotlinx.coroutines.async
 import kotlinx.coroutines.runBlocking
 import org.jsoup.Connection
 import org.jsoup.Jsoup
+import org.mozilla.javascript.NativeObject
+import org.mozilla.javascript.Scriptable
 import com.htmake.reader.init.appCtx
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
@@ -27,6 +29,28 @@ import java.util.*
 import java.util.zip.ZipEntry
 import java.util.zip.ZipInputStream
 import java.text.SimpleDateFormat
+
+private fun Any?.toJsStringMap(): Map<String, String> {
+    return when (this) {
+        null -> emptyMap()
+        is Map<*, *> -> this.entries.associate { (key, value) ->
+            key.toString() to value.toString()
+        }
+        is NativeObject -> {
+            val map = linkedMapOf<String, String>()
+            this.ids.forEach { id ->
+                val key = id.toString()
+                val value = this.get(key, this)
+                if (value != Scriptable.NOT_FOUND && value != null) {
+                    map[key] = value.toString()
+                }
+            }
+            map
+        }
+        is String -> GSON.fromJsonObject<Map<String, String>>(this).getOrNull() ?: emptyMap()
+        else -> GSON.fromJsonObject<Map<String, String>>(GSON.toJson(this)).getOrNull() ?: emptyMap()
+    }
+}
 
 /**
  * js扩展类, 在js中通过java变量调用
@@ -46,6 +70,19 @@ interface JsExtensions {
             kotlin.runCatching {
                 val analyzeUrl = AnalyzeUrl(urlStr, source = getSource())
                 analyzeUrl.getStrResponse(urlStr).body
+            }.onFailure {
+                it.printOnDebug()
+            }.getOrElse {
+                it.msg
+            }
+        }
+    }
+
+    fun ajax(urlStr: String, headers: Any?): String? {
+        return runBlocking {
+            kotlin.runCatching {
+                val analyzeUrl = AnalyzeUrl(urlStr, headerMapF = headers.toJsStringMap(), source = getSource())
+                analyzeUrl.getStrResponseAwait().body
             }.onFailure {
                 it.printOnDebug()
             }.getOrElse {
@@ -89,9 +126,9 @@ interface JsExtensions {
         }
     }
 
-    fun connect(urlStr: String, header: String?): StrResponse {
+    fun connect(urlStr: String, header: Any?): StrResponse {
         return runBlocking {
-            val headerMap = GSON.fromJsonObject<Map<String, String>>(header).getOrNull()
+            val headerMap = header.toJsStringMap()
             val analyzeUrl = AnalyzeUrl(urlStr, headerMapF = headerMap, source = getSource())
             kotlin.runCatching {
                 analyzeUrl.getStrResponseAwait()
@@ -112,6 +149,33 @@ interface JsExtensions {
      */
     fun webView(html: String?, url: String?, js: String?): String? {
         return null
+    }
+
+    fun startBrowserAwait(urlStr: String): StrResponse {
+        return startBrowserAwait(urlStr, null)
+    }
+
+    fun startBrowserAwait(urlStr: String, title: String?): StrResponse {
+        log("startBrowserAwait fallback: ${title ?: urlStr}")
+        return connect(urlStr)
+    }
+
+    fun startBrowser(urlStr: String): StrResponse {
+        return startBrowserAwait(urlStr, null)
+    }
+
+    fun startBrowser(urlStr: String, title: String?): StrResponse {
+        return startBrowserAwait(urlStr, title)
+    }
+
+    fun getVerificationCode(): String {
+        log("getVerificationCode is not available in reader server")
+        return ""
+    }
+
+    fun getVerificationCode(urlStr: String?): String {
+        log("getVerificationCode is not available in reader server: ${urlStr ?: ""}")
+        return ""
     }
 
     /**
@@ -190,12 +254,12 @@ interface JsExtensions {
     /**
      * js实现重定向拦截,网络访问get
      */
-    fun get(urlStr: String, headers: Map<String, String>): Connection.Response {
+    fun get(urlStr: String, headers: Any?): Connection.Response {
         return Jsoup.connect(urlStr)
             .sslSocketFactory(SSLHelper.unsafeSSLSocketFactory)
             .ignoreContentType(true)
             .followRedirects(false)
-            .headers(headers)
+            .headers(headers.toJsStringMap())
             .method(Connection.Method.GET)
             .execute()
     }
@@ -203,13 +267,17 @@ interface JsExtensions {
     /**
      * 网络访问post
      */
-    fun post(urlStr: String, body: String, headers: Map<String, String>): Connection.Response {
+    fun post(urlStr: String, body: String): Connection.Response {
+        return post(urlStr, body, emptyMap<String, String>())
+    }
+
+    fun post(urlStr: String, body: String, headers: Any?): Connection.Response {
         return Jsoup.connect(urlStr)
             .sslSocketFactory(SSLHelper.unsafeSSLSocketFactory)
             .ignoreContentType(true)
             .followRedirects(false)
             .requestBody(body)
-            .headers(headers)
+            .headers(headers.toJsStringMap())
             .method(Connection.Method.POST)
             .execute()
     }
@@ -253,6 +321,30 @@ interface JsExtensions {
 
     fun md5Encode16(str: String): String {
         return MD5Utils.md5Encode16(str)
+    }
+
+    fun hexDecodeToString(str: String): String {
+        return hexDecodeToString(str, "UTF-8")
+    }
+
+    fun hexDecodeToString(str: String, charsetName: String): String {
+        return String(StringUtils.hexStringToByte(str), Charset.forName(charsetName))
+    }
+
+    fun hexEncode(str: String): String {
+        return hexEncode(str, "UTF-8")
+    }
+
+    fun hexEncode(str: String, charsetName: String): String {
+        return StringUtils.byteToHexString(str.toByteArray(Charset.forName(charsetName)))
+    }
+
+    fun t2s(str: String?): String {
+        return str ?: ""
+    }
+
+    fun s2t(str: String?): String {
+        return str ?: ""
     }
 
     /**
@@ -693,7 +785,7 @@ interface JsExtensions {
     }
 
     fun androidId(): String {
-        return ""
+        return MD5Utils.md5Encode16("reader-server")
     }
 
     /**

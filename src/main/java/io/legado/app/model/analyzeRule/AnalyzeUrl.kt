@@ -371,6 +371,7 @@ class AnalyzeUrl(
                 }
             }
         }
+        saveCookie(strResponse.raw)
         fetchEnd(concurrentRecord)
         return strResponse
     }
@@ -413,6 +414,7 @@ class AnalyzeUrl(
                 else -> get(urlNoQuery, fieldMap, true)
             }
         }
+        saveCookie(response)
         fetchEnd(concurrentRecord)
         return response
     }
@@ -504,6 +506,10 @@ class AnalyzeUrl(
                 headerMap.put("Cookie", it)
             }
         }
+    }
+
+    private fun saveCookie(response: Response) {
+        CookieStore.saveFromResponse(source?.getKey() ?: url, response.headers("Set-Cookie"))
     }
 
     fun getUserAgent(): String {
