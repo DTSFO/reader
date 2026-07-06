@@ -1830,12 +1830,9 @@ export default {
       this.checkedSourceIndex = val
         ? this.importSourceList
             .map((v, i) => {
-              // 不勾选使用了 js，webview的书源
+              // 服务端支持 JS 规则；真实 WebView 源仍不默认勾选
               const source = JSON.stringify(v);
-              if (
-                source.indexOf("@js:") !== -1 ||
-                source.indexOf("webView:") !== -1
-              ) {
+              if (source.indexOf("webView:") !== -1) {
                 hasFilterd = true;
                 return false;
               }
@@ -1844,7 +1841,7 @@ export default {
             .filter(v => v)
         : [];
       if (val && hasFilterd) {
-        this.$message.info("部分使用了Javascript和Webview的书源未勾选");
+        this.$message.info("部分使用了WebView的书源未勾选");
       }
       this.isIndeterminate = false;
     },
