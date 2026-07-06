@@ -4,6 +4,7 @@ package io.legado.app.help.http
 import kotlinx.coroutines.suspendCancellableCoroutine
 import okhttp3.ConnectionSpec
 import okhttp3.Credentials
+import okhttp3.Dns
 import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Route
@@ -11,6 +12,8 @@ import okhttp3.Authenticator
 import okhttp3.Response
 import okhttp3.Request
 import okhttp3.logging.HttpLoggingInterceptor
+import java.net.Inet4Address
+import java.net.InetAddress
 import java.net.InetSocketAddress
 import java.net.Proxy
 import java.util.concurrent.ConcurrentHashMap
@@ -21,6 +24,15 @@ import io.legado.app.model.DebugLog
 
 private val proxyClientCache: ConcurrentHashMap<String, OkHttpClient> by lazy {
     ConcurrentHashMap()
+}
+
+private val ipv4FirstDns = object : Dns {
+    override fun lookup(hostname: String): List<InetAddress> {
+        return Dns.SYSTEM.lookup(hostname).sortedWith(
+            compareBy<InetAddress> { if (it is Inet4Address) 0 else 1 }
+                .thenBy { it.hostAddress ?: "" }
+        )
+    }
 }
 
 val okHttpClient: OkHttpClient by lazy {
@@ -38,6 +50,7 @@ val okHttpClient: OkHttpClient by lazy {
         .retryOnConnectionFailure(true)
         .hostnameVerifier(SSLHelper.unsafeHostnameVerifier)
         .connectionSpecs(specs)
+        .dns(ipv4FirstDns)
         .followRedirects(true)
         .followSslRedirects(true)
         .addInterceptor(Interceptor { chain ->

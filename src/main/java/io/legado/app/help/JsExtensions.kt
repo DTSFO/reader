@@ -148,7 +148,14 @@ interface JsExtensions {
      * @return 返回js获取的内容
      */
     fun webView(html: String?, url: String?, js: String?): String? {
-        return null
+        log("webView fallback: ${url ?: "inline html"}")
+        if (!html.isNullOrEmpty()) {
+            return html
+        }
+        if (url.isNullOrBlank()) {
+            return null
+        }
+        return connect(url).body
     }
 
     fun startBrowserAwait(urlStr: String): StrResponse {
