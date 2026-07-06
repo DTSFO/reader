@@ -106,7 +106,7 @@ class AnalyzeUrl(
                     ruleUrl = tmp.replace("@result", ruleUrl)
                 }
             }
-            ruleUrl = evalJS(jsMatcher.group(2) ?: jsMatcher.group(1), ruleUrl) as String
+            ruleUrl = evalJS(jsMatcher.group(2) ?: jsMatcher.group(1), ruleUrl)?.toString() ?: ""
             start = jsMatcher.end()
         }
         if (ruleUrl.length > start) {

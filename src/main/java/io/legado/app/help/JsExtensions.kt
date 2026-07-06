@@ -47,7 +47,7 @@ private fun Any?.toJsStringMap(): Map<String, String> {
             }
             map
         }
-        is String -> GSON.fromJsonObject<Map<String, String>>(this).getOrNull() ?: emptyMap()
+        is CharSequence -> GSON.fromJsonObject<Map<String, String>>(this.toString()).getOrNull() ?: emptyMap()
         else -> GSON.fromJsonObject<Map<String, String>>(GSON.toJson(this)).getOrNull() ?: emptyMap()
     }
 }
@@ -339,12 +339,12 @@ interface JsExtensions {
         return StringUtils.byteToHexString(str.toByteArray(Charset.forName(charsetName)))
     }
 
-    fun t2s(str: String?): String {
-        return str ?: ""
+    fun t2s(str: Any?): String {
+        return str?.toString() ?: ""
     }
 
-    fun s2t(str: String?): String {
-        return str ?: ""
+    fun s2t(str: Any?): String {
+        return str?.toString() ?: ""
     }
 
     /**

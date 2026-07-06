@@ -14,7 +14,9 @@ import io.legado.app.help.http.CookieStore
 import io.legado.app.utils.*
 import kotlinx.coroutines.runBlocking
 import org.jsoup.nodes.Entities
+import org.mozilla.javascript.NativeArray
 import org.mozilla.javascript.NativeObject
+import org.mozilla.javascript.Scriptable
 import java.net.URL
 import java.util.*
 import java.util.regex.Pattern
@@ -54,6 +56,47 @@ class AnalyzeRule(
     private var objectChangedXP = false
     private var objectChangedJS = false
     private var objectChangedJP = false
+
+    private fun NativeArray.toValueList(): List<Any?> {
+        return ids.mapNotNull { id ->
+            val value = when (id) {
+                is Int -> get(id, this)
+                else -> get(id.toString(), this)
+            }
+            if (value == Scriptable.NOT_FOUND) null else value
+        }
+    }
+
+    private fun Any?.toRuleString(): String {
+        return when (this) {
+            null -> ""
+            is NativeArray -> toValueList().joinToString("\n") { it?.toString() ?: "" }
+            is Iterable<*> -> joinToString("\n") { it?.toString() ?: "" }
+            is Array<*> -> joinToString("\n") { it?.toString() ?: "" }
+            else -> toString()
+        }
+    }
+
+    private fun Any?.toRuleStringList(): List<String> {
+        return when (this) {
+            null -> emptyList()
+            is NativeArray -> toValueList().map { it?.toString() ?: "" }
+            is Iterable<*> -> map { it?.toString() ?: "" }
+            is Array<*> -> map { it?.toString() ?: "" }
+            is CharSequence -> toString().split("\n")
+            else -> listOf(toString())
+        }
+    }
+
+    private fun Any?.toRuleObjectList(): List<Any> {
+        return when (this) {
+            null -> emptyList()
+            is NativeArray -> toValueList().filterNotNull()
+            is Iterable<*> -> filterNotNull()
+            is Array<*> -> filterNotNull()
+            else -> listOf(this)
+        }
+    }
 
     @JvmOverloads
     fun setContent(content: Any?, baseUrl: String? = null): AnalyzeRule {
@@ -178,23 +221,20 @@ class AnalyzeRule(
             }
         }
         if (result == null) return null
-        if (result is String) {
-            result = (result as String).split("\n")
+        if (result is CharSequence) {
+            result = result.toString().split("\n")
         }
         if (isUrl) {
             val urlList = ArrayList<String>()
-            if (result is List<*>) {
-                for (url in result as List<*>) {
-                    val absoluteURL = NetworkUtils.getAbsoluteURL(redirectUrl, url.toString())
-                    if (absoluteURL.isNotEmpty() && !urlList.contains(absoluteURL)) {
-                        urlList.add(absoluteURL)
-                    }
+            for (url in result.toRuleStringList()) {
+                val absoluteURL = NetworkUtils.getAbsoluteURL(redirectUrl, url)
+                if (absoluteURL.isNotEmpty() && !urlList.contains(absoluteURL)) {
+                    urlList.add(absoluteURL)
                 }
             }
             return urlList
         }
-        @Suppress("UNCHECKED_CAST")
-        return result as? List<String>
+        return result.toRuleStringList()
     }
 
     /**
@@ -245,12 +285,13 @@ class AnalyzeRule(
             }
         }
         if (result == null) result = ""
+        val resultStr = result.toRuleString()
         val str = kotlin.runCatching {
-            Entities.unescape(result.toString())
+            Entities.unescape(resultStr)
         }.onFailure {
             log("Entities.unescape() error\n${it.localizedMessage}")
         }.getOrElse {
-            result.toString()
+            resultStr
         }
         if (isUrl) {
             return if (str.isBlank()) {
@@ -324,10 +365,7 @@ class AnalyzeRule(
                 }
             }
         }
-        result?.let {
-            return it as List<Any>
-        }
-        return ArrayList()
+        return result.toRuleObjectList()
     }
 
     /**
